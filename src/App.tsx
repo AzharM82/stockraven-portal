@@ -87,7 +87,7 @@ interface ScanProgress {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'leaderboard' | 'watchlist' | 'logs'>('leaderboard')
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'watchlist' | 'analyze' | 'logs'>('leaderboard')
   const [watchlist, setWatchlist] = useState<string[]>([])
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [newTickers, setNewTickers] = useState('')
@@ -98,6 +98,11 @@ function App() {
   // Drill-down modal state
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+
+  // Single stock analysis state
+  const [analyzeSymbol, setAnalyzeSymbol] = useState('')
+  const [analyzeLoading, setAnalyzeLoading] = useState(false)
+  const [analyzeResult, setAnalyzeResult] = useState<Opportunity | null>(null)
 
   // Scan logs state
   const [scanLogs, setScanLogs] = useState<ScanLog[]>([])
@@ -174,6 +179,68 @@ function App() {
       setError('Failed to load opportunity details')
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  // Analyze single stock on-demand
+  const analyzeStock = async () => {
+    const symbol = analyzeSymbol.trim().toUpperCase()
+    if (!symbol || !/^[A-Z]{1,5}$/.test(symbol)) {
+      setError('Please enter a valid ticker symbol (1-5 letters)')
+      return
+    }
+
+    setAnalyzeLoading(true)
+    setAnalyzeResult(null)
+    setError(null)
+
+    try {
+      const res = await fetch(`${API_BASE}/analyze_ticker?symbol=${symbol}&code=${API_KEY}`)
+      const data = await res.json()
+
+      if (data.error) {
+        setError(`Analysis failed: ${data.error}`)
+        return
+      }
+
+      // Map the response to our Opportunity structure
+      const result: Opportunity = {
+        ticker: data.ticker || symbol,
+        company_name: data.company_name || '',
+        news_score: data.news_score || 0,
+        fundamental_score: data.fundamental_score || 0,
+        technical_score: data.technical_score || 0,
+        composite_score: data.composite_score || 0,
+        tier: data.tier || 'N/A',
+        direction: data.direction || 'NEUTRAL',
+        current_price: data.current_price || 0,
+        suggested_entry: data.suggested_entry || 0,
+        suggested_stop: data.suggested_stop || 0,
+        suggested_target: data.suggested_target || 0,
+        risk_reward_ratio: data.risk_reward_ratio || 0,
+        max_position_pct: data.max_position_pct || 0,
+        max_risk_pct: data.max_risk_pct || 0,
+        primary_catalyst: data.primary_catalyst || '',
+        supporting_factors: data.supporting_factors || [],
+        risk_factors: data.risk_factors || [],
+        recent_headlines: data.recent_headlines || [],
+        scan_type: 'on_demand',
+        scan_timestamp: new Date().toISOString(),
+        technical_details: data.technical_details,
+        fundamental_details: data.fundamental_details,
+        news_details: data.news_details,
+      }
+
+      setAnalyzeResult(result)
+      setSuccess(`Successfully analyzed ${symbol}`)
+      setTimeout(() => setSuccess(null), 3000)
+
+      // Refresh leaderboard to show new result
+      fetchOpportunities()
+    } catch (err) {
+      setError(`Failed to analyze ${symbol}: ${err}`)
+    } finally {
+      setAnalyzeLoading(false)
     }
   }
 
@@ -418,6 +485,14 @@ function App() {
             Leaderboard ({opportunities.length})
           </button>
           <button
+            onClick={() => setActiveTab('analyze')}
+            className={`px-4 py-2 rounded-lg font-medium transition ${
+              activeTab === 'analyze' ? 'bg-green-600' : 'bg-gray-800 hover:bg-gray-700'
+            }`}
+          >
+            Analyze Stock
+          </button>
+          <button
             onClick={() => setActiveTab('watchlist')}
             className={`px-4 py-2 rounded-lg font-medium transition ${
               activeTab === 'watchlist' ? 'bg-blue-600' : 'bg-gray-800 hover:bg-gray-700'
@@ -506,6 +581,260 @@ function App() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Analyze Stock Tab */}
+        {activeTab === 'analyze' && (
+          <div className="space-y-6">
+            {/* Input Section */}
+            <div className="bg-gray-800 rounded-xl p-5 border border-gray-700">
+              <h3 className="font-semibold mb-4">Quick Stock Analysis</h3>
+              <p className="text-gray-400 text-sm mb-4">
+                Enter any stock symbol to get instant analysis with news sentiment, technical indicators, and trade setup.
+              </p>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={analyzeSymbol}
+                  onChange={(e) => setAnalyzeSymbol(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      analyzeStock()
+                    }
+                  }}
+                  placeholder="Enter ticker (e.g., AAPL)"
+                  maxLength={5}
+                  className="flex-1 bg-gray-700 px-4 py-3 rounded-lg border border-gray-600 focus:outline-none focus:border-green-500 text-lg font-mono uppercase"
+                />
+                <button
+                  onClick={analyzeStock}
+                  disabled={analyzeLoading || !analyzeSymbol.trim()}
+                  className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  {analyzeLoading ? 'Analyzing...' : 'Analyze'}
+                </button>
+              </div>
+            </div>
+
+            {/* Loading State */}
+            {analyzeLoading && (
+              <div className="bg-gray-800 rounded-xl p-8 border border-gray-700 text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-green-500 border-t-transparent mb-4"></div>
+                <p className="text-gray-400">Analyzing {analyzeSymbol}...</p>
+                <p className="text-gray-500 text-sm mt-2">Fetching news, technicals, and fundamentals</p>
+              </div>
+            )}
+
+            {/* Results */}
+            {analyzeResult && !analyzeLoading && (
+              <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+                {/* Header */}
+                <div className="p-5 border-b border-gray-700 bg-gray-900/50">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h2 className="text-2xl font-bold">{analyzeResult.ticker} - {analyzeResult.company_name}</h2>
+                      <p className="text-gray-400 mt-1">
+                        Composite: <span className={getScoreColor(analyzeResult.composite_score)}>
+                          {analyzeResult.composite_score > 0 ? '+' : ''}{analyzeResult.composite_score.toFixed(1)}
+                        </span>
+                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-bold ${getTierColor(analyzeResult.tier)}`}>
+                          Tier {analyzeResult.tier}
+                        </span>
+                        <span className="ml-2">| Direction: <strong>{analyzeResult.direction}</strong></span>
+                        <span className="ml-2">| Price: <strong>${analyzeResult.current_price?.toFixed(2)}</strong></span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAnalyzeResult(null)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-6">
+                  {/* Score Boxes */}
+                  <div className="grid grid-cols-3 gap-4">
+                    {[
+                      { label: 'News', score: analyzeResult.news_score },
+                      { label: 'Technical', score: analyzeResult.technical_score },
+                      { label: 'Fundamental', score: analyzeResult.fundamental_score },
+                    ].map(({ label, score }) => (
+                      <div key={label} className="bg-gray-700 rounded-lg p-4 text-center">
+                        <div className="text-xs text-gray-400 uppercase">{label}</div>
+                        <div className={`text-3xl font-bold mt-1 ${getScoreColor(score)}`}>
+                          {score > 0 ? '+' : ''}{score.toFixed(0)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Technical Breakdown */}
+                  {analyzeResult.technical_details && (
+                    <div>
+                      <h3 className="text-sm text-gray-400 uppercase mb-2">Technical Breakdown</h3>
+                      <div className="bg-gray-700/50 rounded-lg p-4">
+                        <div className="grid grid-cols-3 gap-4 mb-3">
+                          <div>
+                            <span className="text-gray-400 text-sm">Trend:</span>
+                            <span className={`ml-2 ${getScoreColor(analyzeResult.technical_details.trend_score)}`}>
+                              {analyzeResult.technical_details.trend_score > 0 ? '+' : ''}{analyzeResult.technical_details.trend_score}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 text-sm">Squeeze:</span>
+                            <span className={`ml-2 ${getScoreColor(analyzeResult.technical_details.squeeze_score)}`}>
+                              {analyzeResult.technical_details.squeeze_score > 0 ? '+' : ''}{analyzeResult.technical_details.squeeze_score}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 text-sm">Momentum:</span>
+                            <span className={`ml-2 ${getScoreColor(analyzeResult.technical_details.momentum_score)}`}>
+                              {analyzeResult.technical_details.momentum_score > 0 ? '+' : ''}{analyzeResult.technical_details.momentum_score}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-300">
+                          {analyzeResult.technical_details.rsi && <span className="mr-4">RSI: {analyzeResult.technical_details.rsi.toFixed(0)}</span>}
+                          {analyzeResult.technical_details.macd && <span className="mr-4">MACD: {analyzeResult.technical_details.macd.toFixed(2)}</span>}
+                          {analyzeResult.technical_details.ma_alignment && <span>MA: {analyzeResult.technical_details.ma_alignment}</span>}
+                        </div>
+                        {analyzeResult.technical_details.squeeze_firing && (
+                          <div className="mt-2 text-green-400 text-sm">
+                            Squeeze firing {analyzeResult.technical_details.squeeze_direction}
+                          </div>
+                        )}
+                        {analyzeResult.technical_details.is_in_squeeze && !analyzeResult.technical_details.squeeze_firing && (
+                          <div className="mt-2 text-yellow-400 text-sm">In TTM Squeeze - watching for breakout</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Fundamental Breakdown */}
+                  {analyzeResult.fundamental_details && (
+                    <div>
+                      <h3 className="text-sm text-gray-400 uppercase mb-2">Fundamental Breakdown</h3>
+                      <div className="bg-gray-700/50 rounded-lg p-4">
+                        <div className="text-sm text-gray-300 space-y-1">
+                          {analyzeResult.fundamental_details.short_float_pct && (
+                            <div>Short Float: <strong>{analyzeResult.fundamental_details.short_float_pct.toFixed(1)}%</strong></div>
+                          )}
+                          {analyzeResult.fundamental_details.short_ratio && (
+                            <div>Days to Cover: <strong>{analyzeResult.fundamental_details.short_ratio.toFixed(1)}</strong></div>
+                          )}
+                          {analyzeResult.fundamental_details.shares_float_millions && (
+                            <div>Float: <strong>{analyzeResult.fundamental_details.shares_float_millions.toFixed(0)}M shares</strong></div>
+                          )}
+                          <div>
+                            Squeeze Potential: <strong className={analyzeResult.fundamental_details.high_squeeze_potential ? 'text-green-400' : 'text-gray-400'}>
+                              {analyzeResult.fundamental_details.high_squeeze_potential ? 'HIGH' : 'LOW'}
+                            </strong>
+                          </div>
+                        </div>
+                        {analyzeResult.fundamental_details.has_upcoming_earnings && (
+                          <div className="mt-2 text-yellow-400 text-sm">Earnings event approaching</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* News Analysis */}
+                  {analyzeResult.news_details && (
+                    <div>
+                      <h3 className="text-sm text-gray-400 uppercase mb-2">
+                        News Analysis ({analyzeResult.news_details.news_count} articles, {analyzeResult.news_details.news_velocity.toFixed(1)}/hr)
+                      </h3>
+                      <div className="bg-gray-700/50 rounded-lg p-4">
+                        <div className="text-sm mb-3">
+                          <span className="text-green-400">{analyzeResult.news_details.sentiment_breakdown?.positive || 0} Bullish</span>
+                          <span className="mx-2 text-gray-500">|</span>
+                          <span className="text-gray-400">{analyzeResult.news_details.sentiment_breakdown?.neutral || 0} Neutral</span>
+                          <span className="mx-2 text-gray-500">|</span>
+                          <span className="text-red-400">{analyzeResult.news_details.sentiment_breakdown?.negative || 0} Bearish</span>
+                        </div>
+                        {analyzeResult.news_details.all_headlines?.length > 0 && (
+                          <ul className="text-sm text-gray-300 space-y-1">
+                            {analyzeResult.news_details.all_headlines.slice(0, 5).map((headline, i) => (
+                              <li key={i} className="flex items-start">
+                                <span className="text-gray-500 mr-2">-</span>
+                                {headline}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Trade Setup */}
+                  <div>
+                    <h3 className="text-sm text-gray-400 uppercase mb-2">Trade Setup</h3>
+                    <div className="bg-gray-700/50 rounded-lg p-4">
+                      <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
+                        <div>
+                          <div className="text-xs text-gray-400">Entry</div>
+                          <div className="font-bold text-lg">${analyzeResult.suggested_entry?.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400">Stop</div>
+                          <div className="font-bold text-lg">${analyzeResult.suggested_stop?.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400">Target</div>
+                          <div className="font-bold text-lg">${analyzeResult.suggested_target?.toFixed(2)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400">R:R</div>
+                          <div className="font-bold text-lg">1:{analyzeResult.risk_reward_ratio?.toFixed(1)}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400">Position</div>
+                          <div className="font-bold text-lg">{((analyzeResult.max_position_pct || 0) * 100).toFixed(1)}%</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-400">Risk</div>
+                          <div className="font-bold text-lg">{((analyzeResult.max_risk_pct || 0) * 100).toFixed(2)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Catalyst & Risks */}
+                  <div className="border-t border-gray-700 pt-4">
+                    <div className="text-green-400">
+                      <strong>Catalyst:</strong> {analyzeResult.primary_catalyst || 'No specific catalyst identified'}
+                    </div>
+                    {analyzeResult.supporting_factors?.length > 0 && (
+                      <div className="text-gray-400 text-sm mt-1">
+                        <strong>Supporting:</strong> {analyzeResult.supporting_factors.join(', ')}
+                      </div>
+                    )}
+                    {analyzeResult.risk_factors?.length > 0 && (
+                      <div className="text-yellow-400 text-sm mt-1">
+                        <strong>Risks:</strong> {analyzeResult.risk_factors.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info Box */}
+            {!analyzeResult && !analyzeLoading && (
+              <div className="bg-green-900/20 border border-green-700/50 rounded-xl p-5">
+                <h4 className="text-green-400 font-medium mb-2">Quick Analysis</h4>
+                <ul className="text-gray-300 text-sm space-y-1">
+                  <li>- Analyzes any stock symbol in real-time</li>
+                  <li>- Gets latest news sentiment via AI</li>
+                  <li>- Calculates technical indicators (RSI, MACD, squeeze)</li>
+                  <li>- Provides entry/stop/target trade setup</li>
+                  <li>- Results are saved to the leaderboard</li>
+                </ul>
               </div>
             )}
           </div>
