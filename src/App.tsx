@@ -390,15 +390,15 @@ function App() {
     }
   }
 
-  // Bulk remove tickers
+  // Bulk remove tickers (uses POST with action: "delete" to avoid DELETE body parsing issues)
   const handleBulkRemove = async () => {
     if (selectedTickers.size === 0) return
     const tickers = Array.from(selectedTickers)
     try {
       const res = await fetch(`${API_BASE}/manage_watchlist?code=${API_KEY}`, {
-        method: 'DELETE',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tickers })
+        body: JSON.stringify({ action: 'delete', tickers })
       })
       const data = await res.json()
       setWatchlist(data.watchlist || [])
