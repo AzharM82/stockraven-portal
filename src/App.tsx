@@ -91,6 +91,8 @@ function App() {
   const [watchlist, setWatchlist] = useState<string[]>([])
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
   const [newTickers, setNewTickers] = useState('')
+  const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set())
+  const [selectMode, setSelectMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -385,6 +387,44 @@ function App() {
       setTimeout(() => setSuccess(null), 2000)
     } catch {
       setError('Failed to remove ticker')
+    }
+  }
+
+  // Bulk remove tickers
+  const handleBulkRemove = async () => {
+    if (selectedTickers.size === 0) return
+    const tickers = Array.from(selectedTickers)
+    try {
+      const res = await fetch(`${API_BASE}/manage_watchlist?code=${API_KEY}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers })
+      })
+      const data = await res.json()
+      setWatchlist(data.watchlist || [])
+      setSuccess(`Removed ${tickers.length} ticker${tickers.length > 1 ? 's' : ''}: ${tickers.join(', ')}`)
+      setSelectedTickers(new Set())
+      setSelectMode(false)
+      setTimeout(() => setSuccess(null), 3000)
+    } catch {
+      setError('Failed to remove tickers')
+    }
+  }
+
+  const toggleTickerSelection = (ticker: string) => {
+    setSelectedTickers(prev => {
+      const next = new Set(prev)
+      if (next.has(ticker)) next.delete(ticker)
+      else next.add(ticker)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedTickers.size === watchlist.length) {
+      setSelectedTickers(new Set())
+    } else {
+      setSelectedTickers(new Set(watchlist))
     }
   }
 
@@ -876,13 +916,46 @@ function App() {
             {/* Current Watchlist */}
             <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
               <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                <h3 className="font-semibold">Current Watchlist ({watchlist.length})</h3>
-                <button
-                  onClick={fetchWatchlist}
-                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-                >
-                  Refresh
-                </button>
+                <div className="flex items-center gap-3">
+                  <h3 className="font-semibold">Current Watchlist ({watchlist.length})</h3>
+                  {selectMode && selectedTickers.size > 0 && (
+                    <span className="text-sm text-blue-400">{selectedTickers.size} selected</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectMode && (
+                    <>
+                      <button
+                        onClick={toggleSelectAll}
+                        className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                      >
+                        {selectedTickers.size === watchlist.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                      <button
+                        onClick={handleBulkRemove}
+                        disabled={selectedTickers.size === 0}
+                        className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Remove Selected ({selectedTickers.size})
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSelectMode(!selectMode)
+                      setSelectedTickers(new Set())
+                    }}
+                    className={`px-3 py-1 rounded text-sm ${selectMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'}`}
+                  >
+                    {selectMode ? 'Done' : 'Bulk Remove'}
+                  </button>
+                  <button
+                    onClick={fetchWatchlist}
+                    className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
 
               {watchlist.length === 0 ? (
@@ -894,15 +967,34 @@ function App() {
                   {watchlist.map((ticker) => (
                     <div
                       key={ticker}
-                      className="flex items-center justify-between bg-gray-700 rounded-lg px-3 py-2"
+                      onClick={() => selectMode && toggleTickerSelection(ticker)}
+                      className={`flex items-center justify-between rounded-lg px-3 py-2 ${
+                        selectMode ? 'cursor-pointer' : ''
+                      } ${
+                        selectedTickers.has(ticker)
+                          ? 'bg-red-900/40 border border-red-500/50'
+                          : 'bg-gray-700'
+                      }`}
                     >
-                      <span className="font-medium">{ticker}</span>
-                      <button
-                        onClick={() => handleRemoveTicker(ticker)}
-                        className="text-gray-400 hover:text-red-400 ml-2"
-                      >
-                        x
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {selectMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedTickers.has(ticker)}
+                            onChange={() => toggleTickerSelection(ticker)}
+                            className="rounded border-gray-500 text-red-500 focus:ring-red-500"
+                          />
+                        )}
+                        <span className="font-medium">{ticker}</span>
+                      </div>
+                      {!selectMode && (
+                        <button
+                          onClick={() => handleRemoveTicker(ticker)}
+                          className="text-gray-400 hover:text-red-400 ml-2"
+                        >
+                          x
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
