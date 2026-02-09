@@ -93,6 +93,8 @@ function App() {
   const [newTickers, setNewTickers] = useState('')
   const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
+  const [sortKey, setSortKey] = useState<string>('composite_score')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -448,6 +450,46 @@ function App() {
     }
   }
 
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'ticker' ? 'asc' : 'desc')
+    }
+  }
+
+  const tierRank: Record<string, number> = { 'A+': 5, 'A': 4, 'B': 3, 'C': 2, 'D': 1 }
+
+  const sortedOpportunities = [...opportunities].sort((a, b) => {
+    let cmp = 0
+    switch (sortKey) {
+      case 'ticker':
+        cmp = a.ticker.localeCompare(b.ticker)
+        break
+      case 'composite_score':
+        cmp = a.composite_score - b.composite_score
+        break
+      case 'tier':
+        cmp = (tierRank[a.tier] || 0) - (tierRank[b.tier] || 0)
+        break
+      case 'direction':
+        cmp = a.direction.localeCompare(b.direction)
+        break
+      case 'current_price':
+        cmp = (a.current_price || 0) - (b.current_price || 0)
+        break
+      default:
+        cmp = 0
+    }
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  const sortIndicator = (key: string) => {
+    if (sortKey !== key) return ' \u2195'
+    return sortDir === 'asc' ? ' \u2191' : ' \u2193'
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 30) return 'text-green-400'
     if (score >= 10) return 'text-yellow-400'
@@ -577,18 +619,18 @@ function App() {
                 <table className="w-full">
                   <thead className="bg-gray-900/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Rank</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Ticker</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">Score</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">Tier</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">Direction</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">Price</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase cursor-pointer hover:text-white select-none" onClick={() => handleSort('ticker')}>Ticker{sortIndicator('ticker')}</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase cursor-pointer hover:text-white select-none" onClick={() => handleSort('composite_score')}>Score{sortIndicator('composite_score')}</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase cursor-pointer hover:text-white select-none" onClick={() => handleSort('tier')}>Tier{sortIndicator('tier')}</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase cursor-pointer hover:text-white select-none" onClick={() => handleSort('direction')}>Direction{sortIndicator('direction')}</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase cursor-pointer hover:text-white select-none" onClick={() => handleSort('current_price')}>Price{sortIndicator('current_price')}</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Catalyst</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Top Headline</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
-                    {opportunities.map((opp, idx) => (
+                    {sortedOpportunities.map((opp, idx) => (
                       <tr
                         key={opp.ticker}
                         className="hover:bg-gray-700/30 cursor-pointer"
